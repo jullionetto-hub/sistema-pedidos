@@ -109,6 +109,28 @@ function hashSenha(senha) {
   return crypto.createHash('sha256').update(senha + 'wms_salt_2026').digest('hex');
 }
 
+function criarUsuarioPadrao() {
+  const senhaPadrao = '123456';
+  const senhaHash = hashSenha(senhaPadrao);
+
+  db.run(
+    `INSERT OR IGNORE INTO usuarios (nome, login, senha_hash, perfil, status)
+     VALUES (?, ?, ?, ?, ?)`,
+    ['Supervisor Master', 'admin', senhaHash, 'supervisor', 'ativo'],
+    function (err) {
+      if (err) {
+        console.error('Erro ao criar usuário padrão:', err.message);
+      } else if (this.changes > 0) {
+        console.log('Usuário padrão criado: login=admin senha=123456');
+      } else {
+        console.log('Usuário padrão já existe.');
+      }
+    }
+  );
+}
+
+criarUsuarioPadrao();
+
 app.post('/auth/login', (req, res) => {
   const { login, senha, perfil } = req.body;
 
@@ -255,7 +277,12 @@ app.post('/separadores', (req, res) => {
     'INSERT INTO separadores (nome,matricula,turno,usuario_id) VALUES (?,?,?,?)',
     [nome, matricula, turno || 'Manhã', usuario_id || null],
     function (err) {
-      if (err) return res.status(500).json({ erro: err.message });
+      if (err) {
+        if (err.message.includes('UNIQUE')) {
+          return res.status(409).json({ erro: 'Matrícula já cadastrada!' });
+        }
+        return res.status(500).json({ erro: err.message });
+      }
       res.json({ id: this.lastID, mensagem: 'Separador cadastrado!' });
     }
   );
@@ -323,7 +350,12 @@ app.post('/pedidos', (req, res) => {
     'INSERT INTO pedidos (numero_pedido,separador_id,status,itens,rua,data_pedido,hora_pedido) VALUES (?,?,?,?,?,?,?)',
     [numero_pedido, separador_id || null, status || 'pendente', itens || 0, rua || '', hoje, hora],
     function (err) {
-      if (err) return res.status(500).json({ erro: err.message });
+      if (err) {
+        if (err.message.includes('UNIQUE')) {
+          return res.status(409).json({ erro: 'Pedido já cadastrado!' });
+        }
+        return res.status(500).json({ erro: err.message });
+      }
       res.json({ id: this.lastID, mensagem: 'Pedido cadastrado!' });
     }
   );
@@ -442,11 +474,16 @@ app.put('/itens/:id/verificar', (req, res) => {
               `SELECT id FROM avisos_repositor WHERE item_id=? AND status='pendente'`,
               [item.id],
               (err3, jaExiste) => {
+                if (err3) return res.status(500).json({ erro: err3.message });
+
                 if (jaExiste) {
                   db.run(
                     `UPDATE avisos_repositor SET quantidade=?, obs=?, hora_aviso=? WHERE id=?`,
                     [qtdAviso, obsAviso, hora, jaExiste.id],
-                    () => res.json({ mensagem: 'Aviso atualizado!', aviso: true })
+                    err4 => {
+                      if (err4) return res.status(500).json({ erro: err4.message });
+                      res.json({ mensagem: 'Aviso atualizado!', aviso: true });
+                    }
                   );
                   return;
                 }
