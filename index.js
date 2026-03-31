@@ -97,11 +97,11 @@ db.serialize(() => {
   db.run(`ALTER TABLE avisos_repositor ADD COLUMN obs TEXT DEFAULT ''`, () => {});
   db.run(`ALTER TABLE avisos_repositor ADD COLUMN data_aviso TEXT`, () => {});
 
-  db.run(`CREATE INDEX IF NOT EXISTS idx_pedidos_sep    ON pedidos(separador_id, status)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_pedidos_num    ON pedidos(numero_pedido)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_itens_pedido   ON itens_pedido(pedido_id)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_avisos_status  ON avisos_repositor(status)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_avisos_data    ON avisos_repositor(data_aviso)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_pedidos_sep ON pedidos(separador_id, status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_pedidos_num ON pedidos(numero_pedido)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_itens_pedido ON itens_pedido(pedido_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_avisos_status ON avisos_repositor(status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_avisos_data ON avisos_repositor(data_aviso)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_usuarios_login ON usuarios(login)`);
 });
 
@@ -109,11 +109,12 @@ function hashSenha(senha) {
   return crypto.createHash('sha256').update(senha + 'wms_salt_2026').digest('hex');
 }
 
-// ══ AUTH ══
 app.post('/auth/login', (req, res) => {
   const { login, senha, perfil } = req.body;
-  if (!login || !senha || !perfil)
+
+  if (!login || !senha || !perfil) {
     return res.status(400).json({ erro: 'Dados incompletos!' });
+  }
 
   const hash = hashSenha(senha);
 
@@ -130,14 +131,14 @@ app.post('/auth/login', (req, res) => {
           [user.id],
           (err2, sep) => {
             if (err2) return res.status(500).json({ erro: err2.message });
-            res.json({
+            return res.json({
               usuario: { id: user.id, nome: user.nome, login: user.login, perfil: user.perfil },
               separador: sep || null
             });
           }
         );
       } else {
-        res.json({
+        return res.json({
           usuario: { id: user.id, nome: user.nome, login: user.login, perfil: user.perfil },
           separador: null
         });
@@ -146,15 +147,16 @@ app.post('/auth/login', (req, res) => {
   );
 });
 
-// ══ USUARIOS ══
 app.get('/usuarios', (req, res) => {
   const { perfil } = req.query;
   let sql = 'SELECT id,nome,login,perfil,status,data_cadastro FROM usuarios WHERE 1=1';
   const params = [];
+
   if (perfil) {
     sql += ' AND perfil=?';
     params.push(perfil);
   }
+
   sql += ' ORDER BY nome';
 
   db.all(sql, params, (err, rows) => {
@@ -165,8 +167,10 @@ app.get('/usuarios', (req, res) => {
 
 app.post('/usuarios', (req, res) => {
   const { nome, login, senha, perfil } = req.body;
-  if (!nome || !login || !senha || !perfil)
+
+  if (!nome || !login || !senha || !perfil) {
     return res.status(400).json({ erro: 'Preencha todos os campos!' });
+  }
 
   const hash = hashSenha(senha);
 
@@ -175,9 +179,12 @@ app.post('/usuarios', (req, res) => {
     [nome, login, hash, perfil],
     function (err) {
       if (err) {
-        if (err.message.includes('UNIQUE')) return res.status(409).json({ erro: 'Login já cadastrado!' });
+        if (err.message.includes('UNIQUE')) {
+          return res.status(409).json({ erro: 'Login já cadastrado!' });
+        }
         return res.status(500).json({ erro: err.message });
       }
+
       res.json({ id: this.lastID, mensagem: 'Usuário cadastrado!' });
     }
   );
@@ -215,7 +222,6 @@ app.delete('/usuarios/:id', (req, res) => {
   });
 });
 
-// ══ SEPARADORES ══
 app.get('/separadores', (req, res) => {
   db.all('SELECT * FROM separadores ORDER BY nome', [], (err, rows) => {
     if (err) return res.status(500).json({ erro: err.message });
@@ -244,6 +250,7 @@ app.get('/separadores/:id', (req, res) => {
 
 app.post('/separadores', (req, res) => {
   const { nome, matricula, turno, usuario_id } = req.body;
+
   db.run(
     'INSERT INTO separadores (nome,matricula,turno,usuario_id) VALUES (?,?,?,?)',
     [nome, matricula, turno || 'Manhã', usuario_id || null],
@@ -256,6 +263,7 @@ app.post('/separadores', (req, res) => {
 
 app.put('/separadores/:id', (req, res) => {
   const { nome, matricula, turno, status, usuario_id } = req.body;
+
   db.run(
     'UPDATE separadores SET nome=?,matricula=?,turno=?,status=?,usuario_id=? WHERE id=?',
     [nome, matricula, turno, status, usuario_id || null, req.params.id],
@@ -273,11 +281,12 @@ app.delete('/separadores/:id', (req, res) => {
   });
 });
 
-// ══ PEDIDOS ══
 app.get('/pedidos', (req, res) => {
   const { separador_id, status, data, numero_pedido } = req.query;
-  let query = `SELECT p.*, s.nome as separador_nome FROM pedidos p
-               LEFT JOIN separadores s ON p.separador_id=s.id WHERE 1=1`;
+  let query = `SELECT p.*, s.nome as separador_nome
+               FROM pedidos p
+               LEFT JOIN separadores s ON p.separador_id=s.id
+               WHERE 1=1`;
   const params = [];
 
   if (separador_id) {
@@ -322,6 +331,7 @@ app.post('/pedidos', (req, res) => {
 
 app.put('/pedidos/:id/status', (req, res) => {
   const { status } = req.body;
+
   db.run('UPDATE pedidos SET status=? WHERE id=?', [status, req.params.id], err => {
     if (err) return res.status(500).json({ erro: err.message });
     res.json({ mensagem: 'Status atualizado!' });
@@ -330,6 +340,7 @@ app.put('/pedidos/:id/status', (req, res) => {
 
 app.put('/pedidos/:id/separador', (req, res) => {
   const { separador_id } = req.body;
+
   db.run('UPDATE pedidos SET separador_id=? WHERE id=?', [separador_id, req.params.id], err => {
     if (err) return res.status(500).json({ erro: err.message });
     res.json({ mensagem: 'Separador atribuído!' });
@@ -338,29 +349,44 @@ app.put('/pedidos/:id/separador', (req, res) => {
 
 app.post('/pedidos/bipar', (req, res) => {
   const { numero_pedido, separador_id } = req.body;
-  if (!numero_pedido || !separador_id)
+
+  if (!numero_pedido || !separador_id) {
     return res.status(400).json({ erro: 'Dados incompletos!' });
+  }
 
   db.get('SELECT * FROM pedidos WHERE numero_pedido=?', [numero_pedido], (err, pedido) => {
     if (err) return res.status(500).json({ erro: err.message });
     if (!pedido) return res.status(404).json({ erro: 'Pedido não encontrado!' });
-    if (pedido.status === 'concluido')
+
+    if (pedido.status === 'concluido') {
       return res.status(400).json({ erro: 'Pedido já concluído!', status: 'concluido' });
-    if (pedido.separador_id && pedido.separador_id != separador_id && pedido.status !== 'pendente')
+    }
+
+    if (pedido.separador_id && pedido.separador_id != separador_id && pedido.status !== 'pendente') {
       return res.status(409).json({ erro: 'Pedido sendo separado por outro operador!' });
-    if (pedido.separador_id == separador_id)
-      return res.json({ mensagem: 'Pedido já atribuído.', pedido_id: pedido.id, status: pedido.status, ja_atribuido: true });
+    }
+
+    if (pedido.separador_id == separador_id) {
+      return res.json({
+        mensagem: 'Pedido já atribuído.',
+        pedido_id: pedido.id,
+        status: pedido.status,
+        ja_atribuido: true
+      });
+    }
 
     const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
     db.run(
-      `UPDATE pedidos SET separador_id=?,status='separando',hora_pedido=?
+      `UPDATE pedidos
+       SET separador_id=?, status='separando', hora_pedido=?
        WHERE id=? AND (separador_id IS NULL OR separador_id=?) AND status='pendente'`,
       [separador_id, hora, pedido.id, separador_id],
       function (err2) {
         if (err2) return res.status(500).json({ erro: err2.message });
-        if (this.changes === 0)
+        if (this.changes === 0) {
           return res.status(409).json({ erro: 'Pedido acabou de ser pego por outro operador!' });
+        }
 
         res.json({ mensagem: 'Pedido atribuído!', pedido_id: pedido.id, status: 'separando' });
       }
@@ -373,7 +399,8 @@ app.get('/pedidos/:id/itens', (req, res) => {
     `SELECT i.*, COALESCE(a.status,'') as aviso_status
      FROM itens_pedido i
      LEFT JOIN avisos_repositor a ON a.item_id=i.id AND a.status IN ('reposto','nao_encontrado')
-     WHERE i.pedido_id=? ORDER BY i.id`,
+     WHERE i.pedido_id=?
+     ORDER BY i.id`,
     [req.params.id],
     (err, rows) => {
       if (err) return res.status(500).json({ erro: err.message });
@@ -388,17 +415,21 @@ app.put('/itens/:id/verificar', (req, res) => {
   const data = new Date().toISOString().split('T')[0];
 
   db.get(
-    `SELECT i.*, p.numero_pedido FROM itens_pedido i
-     JOIN pedidos p ON i.pedido_id=p.id WHERE i.id=?`,
+    `SELECT i.*, p.numero_pedido
+     FROM itens_pedido i
+     JOIN pedidos p ON i.pedido_id=p.id
+     WHERE i.id=?`,
     [req.params.id],
     (err, item) => {
-      if (err || !item) return res.status(500).json({ erro: err?.message || 'Item não encontrado' });
+      if (err || !item) {
+        return res.status(500).json({ erro: err?.message || 'Item não encontrado' });
+      }
 
       const obsTexto = obs || '';
       const qtdFaltou = qtd_falta || 0;
 
       db.run(
-        'UPDATE itens_pedido SET status=?,obs=?,qtd_falta=?,hora_verificado=? WHERE id=?',
+        'UPDATE itens_pedido SET status=?, obs=?, qtd_falta=?, hora_verificado=? WHERE id=?',
         [status, obsTexto, qtdFaltou, hora, req.params.id],
         err2 => {
           if (err2) return res.status(500).json({ erro: err2.message });
@@ -413,7 +444,7 @@ app.put('/itens/:id/verificar', (req, res) => {
               (err3, jaExiste) => {
                 if (jaExiste) {
                   db.run(
-                    `UPDATE avisos_repositor SET quantidade=?,obs=?,hora_aviso=? WHERE id=?`,
+                    `UPDATE avisos_repositor SET quantidade=?, obs=?, hora_aviso=? WHERE id=?`,
                     [qtdAviso, obsAviso, hora, jaExiste.id],
                     () => res.json({ mensagem: 'Aviso atualizado!', aviso: true })
                   );
@@ -422,9 +453,8 @@ app.put('/itens/:id/verificar', (req, res) => {
 
                 db.run(
                   `INSERT INTO avisos_repositor
-                   (item_id,pedido_id,numero_pedido,separador_id,separador_nome,
-                    codigo,descricao,endereco,quantidade,obs,status,hora_aviso,data_aviso)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,'pendente',?,?)`,
+                  (item_id,pedido_id,numero_pedido,separador_id,separador_nome,codigo,descricao,endereco,quantidade,obs,status,hora_aviso,data_aviso)
+                  VALUES (?,?,?,?,?,?,?,?,?,?,'pendente',?,?)`,
                   [
                     item.id,
                     item.pedido_id,
@@ -456,28 +486,39 @@ app.put('/itens/:id/verificar', (req, res) => {
 });
 
 app.put('/pedidos/:id/concluir', (req, res) => {
-  db.all(`SELECT * FROM itens_pedido WHERE pedido_id=? AND status='pendente'`, [req.params.id], (err, pendentes) => {
-    if (err) return res.status(500).json({ erro: err.message });
-    if (pendentes.length > 0)
-      return res.status(400).json({ erro: `Ainda há ${pendentes.length} item(s) não verificado(s)!` });
+  db.all(
+    `SELECT * FROM itens_pedido WHERE pedido_id=? AND status='pendente'`,
+    [req.params.id],
+    (err, pendentes) => {
+      if (err) return res.status(500).json({ erro: err.message });
 
-    db.all(`SELECT * FROM avisos_repositor WHERE pedido_id=? AND status='pendente'`, [req.params.id], (err2, avisosPendentes) => {
-      if (err2) return res.status(500).json({ erro: err2.message });
-      if (avisosPendentes.length > 0)
-        return res.status(400).json({
-          erro: `Aguardando repositor resolver ${avisosPendentes.length} item(s)!`,
-          aguardando: true
-        });
+      if (pendentes.length > 0) {
+        return res.status(400).json({ erro: `Ainda há ${pendentes.length} item(s) não verificado(s)!` });
+      }
 
-      db.run('UPDATE pedidos SET status="concluido" WHERE id=?', [req.params.id], err3 => {
-        if (err3) return res.status(500).json({ erro: err3.message });
-        res.json({ mensagem: 'Pedido concluído!' });
-      });
-    });
-  });
+      db.all(
+        `SELECT * FROM avisos_repositor WHERE pedido_id=? AND status='pendente'`,
+        [req.params.id],
+        (err2, avisosPendentes) => {
+          if (err2) return res.status(500).json({ erro: err2.message });
+
+          if (avisosPendentes.length > 0) {
+            return res.status(400).json({
+              erro: `Aguardando repositor resolver ${avisosPendentes.length} item(s)!`,
+              aguardando: true
+            });
+          }
+
+          db.run('UPDATE pedidos SET status="concluido" WHERE id=?', [req.params.id], err3 => {
+            if (err3) return res.status(500).json({ erro: err3.message });
+            res.json({ mensagem: 'Pedido concluído!' });
+          });
+        }
+      );
+    }
+  );
 });
 
-// ══ REPOSITOR ══
 app.get('/repositor/avisos', (req, res) => {
   const { status, data } = req.query;
   let query = 'SELECT * FROM avisos_repositor WHERE 1=1';
@@ -487,6 +528,7 @@ app.get('/repositor/avisos', (req, res) => {
     query += ' AND status=?';
     params.push(status);
   }
+
   if (data) {
     query += ' AND data_aviso=?';
     params.push(data);
@@ -502,28 +544,42 @@ app.get('/repositor/avisos', (req, res) => {
 
 app.put('/repositor/avisos/:id/reposto', (req, res) => {
   const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  db.run('UPDATE avisos_repositor SET status="reposto",hora_reposto=? WHERE id=?', [hora, req.params.id], err => {
-    if (err) return res.status(500).json({ erro: err.message });
-    res.json({ mensagem: 'Item reposto!' });
-  });
+
+  db.run(
+    'UPDATE avisos_repositor SET status="reposto",hora_reposto=? WHERE id=?',
+    [hora, req.params.id],
+    err => {
+      if (err) return res.status(500).json({ erro: err.message });
+      res.json({ mensagem: 'Item reposto!' });
+    }
+  );
 });
 
 app.put('/repositor/avisos/:id/nao_encontrado', (req, res) => {
   const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  db.run('UPDATE avisos_repositor SET status="nao_encontrado",hora_reposto=? WHERE id=?', [hora, req.params.id], err => {
-    if (err) return res.status(500).json({ erro: err.message });
-    res.json({ mensagem: 'Marcado como não encontrado!' });
-  });
+
+  db.run(
+    'UPDATE avisos_repositor SET status="nao_encontrado",hora_reposto=? WHERE id=?',
+    [hora, req.params.id],
+    err => {
+      if (err) return res.status(500).json({ erro: err.message });
+      res.json({ mensagem: 'Marcado como não encontrado!' });
+    }
+  );
 });
 
-// ══ IMPORTAÇÃO ══
 app.post('/importar', (req, res) => {
   const { linhas } = req.body;
-  if (!linhas || !linhas.length) return res.status(400).json({ erro: 'Nenhuma linha enviada!' });
+
+  if (!linhas || !linhas.length) {
+    return res.status(400).json({ erro: 'Nenhuma linha enviada!' });
+  }
 
   const hoje = new Date().toISOString().split('T')[0];
   const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  let importados = 0, ignorados = 0, erros = 0;
+  let importados = 0;
+  let ignorados = 0;
+  let erros = 0;
   const pedidosMap = {};
 
   linhas.forEach(l => {
@@ -585,12 +641,17 @@ app.post('/importar', (req, res) => {
 
   function verificarFim() {
     if (processados === numeros.length) {
-      res.json({ mensagem: 'Importação concluída!', importados, ignorados, erros, total: numeros.length });
+      res.json({
+        mensagem: 'Importação concluída!',
+        importados,
+        ignorados,
+        erros,
+        total: numeros.length
+      });
     }
   }
 });
 
-// ══ PRODUTIVIDADE ══
 app.get('/produtividade', (req, res) => {
   const { separador_id } = req.query;
   let query = `
